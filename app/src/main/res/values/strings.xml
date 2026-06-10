@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Usage Meter for SLT</string>
+    <string name="widget_description">SLT broadband usage widget (2×1+)</string>
+    <string name="metric_widget_description">SLT single metric circular widget (1×1)</string>
+</resources>
