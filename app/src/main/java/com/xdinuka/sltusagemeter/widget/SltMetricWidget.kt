@@ -6,7 +6,6 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color as AColor
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
@@ -73,7 +72,6 @@ class SltMetricWidget : GlanceAppWidget() {
                     modifier = GlanceModifier
                         .fillMaxSize()
                         .background(bgColor)
-                        .padding(4.dp)
                         .clickable(actionStartActivity(configIntent)),
                     contentAlignment = Alignment.Center
                 ) {

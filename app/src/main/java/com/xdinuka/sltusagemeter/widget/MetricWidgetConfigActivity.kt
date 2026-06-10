@@ -17,10 +17,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -33,6 +29,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.xdinuka.sltusagemeter.data.auth.AccountProfile
 import com.xdinuka.sltusagemeter.data.auth.ProfileStore
+import com.xdinuka.sltusagemeter.data.prefs.UsageCacheEntry
+import com.xdinuka.sltusagemeter.data.prefs.UsageCacheStore
 import com.xdinuka.sltusagemeter.ui.theme.SltTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -41,6 +39,7 @@ import javax.inject.Inject
 class MetricWidgetConfigActivity : ComponentActivity() {
 
     @Inject lateinit var profileStore: ProfileStore
+    @Inject lateinit var usageCacheStore: UsageCacheStore
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,22 +51,19 @@ class MetricWidgetConfigActivity : ComponentActivity() {
         if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) {
             setResult(RESULT_CANCELED); finish(); return
         }
-
         setResult(RESULT_CANCELED)
 
         setContent {
             SltTheme {
                 MetricConfigScreen(
-                    widgetId = appWidgetId,
-                    profiles = profileStore.profiles.value,
-                    existing = MetricWidgetConfigStore(this).getConfig(appWidgetId),
+                    widgetId  = appWidgetId,
+                    profiles  = profileStore.profiles.value,
+                    existing  = MetricWidgetConfigStore(this).getConfig(appWidgetId),
+                    loadCache = { profileId, phone -> usageCacheStore.load(profileId, phone) },
                     onSave = { config ->
                         MetricWidgetConfigStore(this).saveConfig(config)
                         SltWidgetReceiver.enqueueOneTimeWork(this)
-                        setResult(
-                            RESULT_OK,
-                            Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-                        )
+                        setResult(RESULT_OK, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId))
                         finish()
                     },
                     onCancel = { setResult(RESULT_CANCELED); finish() }
@@ -83,32 +79,39 @@ private fun MetricConfigScreen(
     widgetId: Int,
     profiles: List<AccountProfile>,
     existing: MetricWidgetConfig,
+    loadCache: (profileId: String, phone: String) -> UsageCacheEntry?,
     onSave: (MetricWidgetConfig) -> Unit,
     onCancel: () -> Unit
 ) {
     var selectedProfileId by remember { mutableStateOf(existing.profileId ?: profiles.firstOrNull()?.id) }
-    var selectedPhone by remember { mutableStateOf(existing.telephoneNo) }
-    var dataPoint by remember { mutableStateOf(existing.dataPoint) }
-    var themeMode by remember { mutableStateOf(existing.themeMode) }
-    var alpha by remember { mutableFloatStateOf(existing.backgroundAlpha) }
-    var arcColor by remember { mutableStateOf(existing.color) }
+    var selectedPhone     by remember { mutableStateOf(existing.telephoneNo) }
+    var dataPoint         by remember { mutableStateOf(existing.dataPoint) }
+    var themeMode         by remember { mutableStateOf(existing.themeMode) }
+    var alpha             by remember { mutableFloatStateOf(existing.backgroundAlpha) }
+    var arcColor          by remember { mutableStateOf(existing.color) }
 
     val selectedProfile = profiles.find { it.id == selectedProfileId }
     val phones = selectedProfile?.telephoneNumbers ?: emptyList()
 
-    val metricOptions = listOf(
-        "MAIN_0" to "Main Data (1st)",
-        "MAIN_1" to "Main Data (2nd)",
-        "BONUS" to "Bonus Data",
-        "EXTRA_GB" to "Extra GB",
-        "VAS_0" to "Add-on Bundle (1st)",
-        "VAS_1" to "Add-on Bundle (2nd)"
-    )
+    // Derive metric options from cache when a profile+phone is selected;
+    // fall back to generic labels when no data has been fetched yet.
+    val metricOptions: List<Pair<String, String>> = remember(selectedProfileId, selectedPhone) {
+        val pid = selectedProfileId
+        val ph  = selectedPhone ?: phones.firstOrNull()
+        if (pid != null && ph != null) {
+            val entry = loadCache(pid, ph)
+            val summary = entry?.summary
+            if (summary != null) {
+                val items = buildWidgetItems(summary, entry.vasBundles)
+                metricOptionsFromItems(items).ifEmpty { GENERIC_METRIC_OPTIONS }
+            } else GENERIC_METRIC_OPTIONS
+        } else GENERIC_METRIC_OPTIONS
+    }
 
     Scaffold(topBar = { TopAppBar(title = { Text("Configure Metric Widget") }) }) { padding ->
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
 
-            // ── Account ──────────────────────────────────────────────────────
+            // ── Account ───────────────────────────────────────────────────────
             item { SectionHeader("Account") }
             item {
                 if (profiles.isNotEmpty()) {
@@ -130,62 +133,67 @@ private fun MetricConfigScreen(
                 }
             }
 
-            // ── Metric ───────────────────────────────────────────────────────
+            // ── Metric ────────────────────────────────────────────────────────
             item {
                 Spacer(Modifier.height(12.dp))
                 SectionHeader("Metric to display")
                 DropdownSetting(
                     label = "Metric",
-                    value = metricOptions.find { it.first == dataPoint }?.second ?: dataPoint,
+                    value = metricOptions.find { it.first == dataPoint }?.second
+                        ?: metricOptions.firstOrNull()?.second
+                        ?: dataPoint,
                     options = metricOptions.map { it.second },
                     onSelect = { idx -> dataPoint = metricOptions[idx].first }
                 )
             }
 
-            // ── Appearance ───────────────────────────────────────────────────
+            // ── Appearance ────────────────────────────────────────────────────
             item {
                 Spacer(Modifier.height(12.dp))
                 SectionHeader("Appearance")
                 ThemeSelector(themeMode) { themeMode = it }
-                Spacer(Modifier.height(8.dp))
-                Column(Modifier.padding(horizontal = 16.dp)) {
-                    Text(
-                        "Background opacity: ${(alpha * 100).toInt()}%",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Slider(value = alpha, onValueChange = { alpha = it }, valueRange = 0f..1f, steps = 19)
-                }
+                Spacer(Modifier.height(12.dp))
+                OpacitySelector(
+                    value    = alpha,
+                    onChange = { alpha = it },
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
             }
 
-            // ── Arc colour ───────────────────────────────────────────────────
+            // ── Arc colour ────────────────────────────────────────────────────
             item {
                 Spacer(Modifier.height(12.dp))
                 SectionHeader("Arc colour")
-                ColorPaletteRow(
-                    selected = arcColor,
-                    onSelect = { arcColor = it },
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                )
+                Column(Modifier.padding(horizontal = 16.dp)) {
+                    Text(
+                        "Colour",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    ColorPicker(
+                        selected = arcColor,
+                        onSelect = { arcColor = it }
+                    )
+                }
                 Spacer(Modifier.height(4.dp))
             }
 
-            // ── Buttons ──────────────────────────────────────────────────────
+            // ── Buttons ───────────────────────────────────────────────────────
             item {
                 Spacer(Modifier.height(16.dp))
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                     Button(
                         onClick = {
-                            onSave(
-                                MetricWidgetConfig(
-                                    widgetId = widgetId,
-                                    profileId = selectedProfileId,
-                                    telephoneNo = selectedPhone ?: phones.firstOrNull(),
-                                    dataPoint = dataPoint,
-                                    themeMode = themeMode,
-                                    backgroundAlpha = alpha,
-                                    color = arcColor
-                                )
-                            )
+                            onSave(MetricWidgetConfig(
+                                widgetId    = widgetId,
+                                profileId   = selectedProfileId,
+                                telephoneNo = selectedPhone ?: phones.firstOrNull(),
+                                dataPoint   = dataPoint,
+                                themeMode   = themeMode,
+                                backgroundAlpha = alpha,
+                                color       = arcColor
+                            ))
                         },
                         modifier = Modifier.weight(1f)
                     ) { Text("Save") }
