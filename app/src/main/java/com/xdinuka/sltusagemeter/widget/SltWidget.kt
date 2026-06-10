@@ -24,6 +24,7 @@ import androidx.glance.layout.Box
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
+import androidx.glance.layout.fillMaxHeight
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
@@ -53,10 +54,10 @@ class SltWidget : GlanceAppWidget() {
         val bgArgb = AColor.argb(alpha, AColor.red(baseColor), AColor.green(baseColor), AColor.blue(baseColor))
         val bgColor = Color(bgArgb.toLong() and 0xFFFFFFFFL)
 
-        val textColor = if (isDark) Color.White else Color(0xFF212121)
-        val subTextColor = if (isDark) Color(0xFFAAAAAA) else Color(0xFF757575)
+        val textColor    = if (isDark) Color.White        else Color(0xFF212121)
+        val subTextColor = if (isDark) Color(0xFFAAAAAA)  else Color(0xFF757575)
+        val trackColor   = if (isDark) Color(0x33FFFFFF)  else Color(0x18000000)
 
-        // Intent to open config — works both at initial placement and for reconfigure
         val configIntent = Intent(context, SltWidgetConfigActivity::class.java).apply {
             putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -68,13 +69,14 @@ class SltWidget : GlanceAppWidget() {
                     modifier = GlanceModifier
                         .fillMaxSize()
                         .background(bgColor)
-                        .padding(8.dp)
+                        .padding(12.dp)
                 ) {
                     WidgetContent(
-                        state = state,
-                        config = config,
-                        textColor = textColor,
+                        state        = state,
+                        config       = config,
+                        textColor    = textColor,
                         subTextColor = subTextColor,
+                        trackColor   = trackColor,
                         configIntent = configIntent
                     )
                 }
@@ -83,21 +85,28 @@ class SltWidget : GlanceAppWidget() {
     }
 }
 
+// ── State router ──────────────────────────────────────────────────────────────
+
 @Composable
 private fun WidgetContent(
     state: WidgetDisplayState,
     config: WidgetConfig,
     textColor: Color,
     subTextColor: Color,
+    trackColor: Color,
     configIntent: Intent
 ) {
     when (state) {
         is WidgetDisplayState.LoggedOut -> LoginPrompt(subTextColor)
-        is WidgetDisplayState.Loading -> LoadingContent(subTextColor)
-        is WidgetDisplayState.Success -> UsageContent(state, config, textColor, subTextColor, configIntent)
-        is WidgetDisplayState.Error -> ErrorContent(state.message)
+        is WidgetDisplayState.Loading   -> LoadingContent(subTextColor)
+        is WidgetDisplayState.Error     -> ErrorContent(state.message)
+        is WidgetDisplayState.Success   -> UsageContent(
+            state, config, textColor, subTextColor, trackColor, configIntent
+        )
     }
 }
+
+// ── Static states ─────────────────────────────────────────────────────────────
 
 @Composable
 private fun LoginPrompt(subTextColor: Color) {
@@ -115,7 +124,7 @@ private fun LoginPrompt(subTextColor: Color) {
 @Composable
 private fun LoadingContent(subTextColor: Color) {
     Box(GlanceModifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("Loading...", style = TextStyle(fontSize = 12.sp, color = ColorProvider(subTextColor)))
+        Text("Loading…", style = TextStyle(fontSize = 12.sp, color = ColorProvider(subTextColor)))
     }
 }
 
@@ -126,19 +135,22 @@ private fun ErrorContent(message: String) {
     }
 }
 
+// ── Success layout ────────────────────────────────────────────────────────────
+
 @Composable
 private fun UsageContent(
     state: WidgetDisplayState.Success,
     config: WidgetConfig,
     textColor: Color,
     subTextColor: Color,
+    trackColor: Color,
     configIntent: Intent
 ) {
-    val enabledTypes = config.enabledDataPoints.toSet()
-    val visibleItems = state.items.filter { it.dataPointType in enabledTypes }
+    val visibleItems = state.items.filter { it.dataPointType in config.enabledDataPoints }
 
     Column(modifier = GlanceModifier.fillMaxSize()) {
-        // ── Header row ──────────────────────────────────────────────────────
+
+        // ── Header ────────────────────────────────────────────────────────────
         Row(
             modifier = GlanceModifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -146,7 +158,7 @@ private fun UsageContent(
             if (config.showAccountDetails) {
                 Text(
                     text = state.subscriberID,
-                    style = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.Medium, color = ColorProvider(subTextColor)),
+                    style = TextStyle(fontWeight = FontWeight.Medium, color = ColorProvider(subTextColor)),
                     modifier = GlanceModifier.defaultWeight()
                 )
             } else {
@@ -158,45 +170,125 @@ private fun UsageContent(
                 Spacer(GlanceModifier.width(4.dp))
             }
 
-            // ⚙ Reconfigure tap target
+            // ⚙ reconfigure
             Box(
                 modifier = GlanceModifier
                     .size(20.dp)
                     .clickable(actionStartActivity(configIntent)),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "⚙",
-                    style = TextStyle(fontSize = 11.sp, color = ColorProvider(subTextColor.copy(alpha = 0.7f)))
-                )
+                Text("⚙", style = TextStyle(color = ColorProvider(subTextColor.copy(alpha = 0.7f))))
             }
         }
 
-        Spacer(GlanceModifier.height(4.dp))
+        Spacer(GlanceModifier.height(6.dp))
 
-        // ── Progress rows ────────────────────────────────────────────────────
-        visibleItems.take(6).forEach { item ->
-            WidgetProgressRow(item = item, config = config, textColor = textColor, subTextColor = subTextColor)
-            Spacer(GlanceModifier.height(4.dp))
+        // ── Data rows ─────────────────────────────────────────────────────────
+        visibleItems.take(5).forEach { item ->
+            WidgetProgressRow(
+                item         = item,
+                config       = config,
+                textColor    = textColor,
+                subTextColor = subTextColor,
+                trackColor   = trackColor
+            )
+            Spacer(GlanceModifier.height(6.dp))
         }
 
-        // ── Last fetched timestamp ────────────────────────────────────────────
+        // ── Timestamp footer ──────────────────────────────────────────────────
         if (config.showLastFetched && state.lastFetchedAt != null) {
             Spacer(GlanceModifier.defaultWeight())
             Text(
                 text = widgetRelativeTime(state.lastFetchedAt),
-                style = TextStyle(fontSize = 9.sp, color = ColorProvider(subTextColor.copy(alpha = 0.55f)))
+                style = TextStyle(color = ColorProvider(subTextColor.copy(alpha = 0.55f)))
             )
         }
     }
 }
 
+// ── Data row ──────────────────────────────────────────────────────────────────
+
+@Composable
+private fun WidgetProgressRow(
+    item: WidgetUsageItem,
+    config: WidgetConfig,
+    textColor: Color,
+    subTextColor: Color,
+    trackColor: Color
+) {
+    val color    = parseWidgetColor(config.colorFor(item.dataPointType))
+    val progress = (item.percentage / 100f).coerceIn(0f, 1f)
+    val usageText = item.limit
+        ?.let { "${item.used} / $it ${item.volumeUnit}" }
+        ?: "${item.used} ${item.volumeUnit}"
+
+    if (item.limit == null) {
+        // No limit — just show name + usage centred, no bar
+        Column(
+            modifier = GlanceModifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = item.name,
+                style = TextStyle(color = ColorProvider(subTextColor)),
+                maxLines = 1
+            )
+            Text(
+                text = usageText,
+                style = TextStyle(fontWeight = FontWeight.Bold, color = ColorProvider(textColor)),
+                maxLines = 1
+            )
+        }
+    } else {
+        Row(
+            modifier = GlanceModifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Left — name + used/limit (intrinsic width, no weight)
+            Column {
+                Text(
+                    text = item.name,
+                    style = TextStyle(color = ColorProvider(subTextColor)),
+                    maxLines = 1
+                )
+                Text(
+                    text = usageText,
+                    style = TextStyle(fontWeight = FontWeight.Bold, color = ColorProvider(textColor)),
+                    maxLines = 1
+                )
+            }
+
+            Spacer(GlanceModifier.width(8.dp))
+
+            // Right — percentage label + thick bar; takes all remaining space
+            Column(
+                modifier = GlanceModifier.defaultWeight(),
+                horizontalAlignment = Alignment.End
+            ) {
+                Text(
+                    text = "${item.percentage}%",
+                    style = TextStyle(fontWeight = FontWeight.Medium, color = ColorProvider(color))
+                )
+                Spacer(GlanceModifier.height(3.dp))
+                LinearProgressIndicator(
+                    progress        = progress,
+                    modifier        = GlanceModifier.fillMaxWidth().height(10.dp),
+                    color           = ColorProvider(color),
+                    backgroundColor = ColorProvider(trackColor)
+                )
+            }
+        }
+    }
+}
+
+// ── Status chip ───────────────────────────────────────────────────────────────
+
 @Composable
 private fun StatusChip(status: String) {
     val color = when (status.uppercase()) {
         "NORMAL", "ACTIVE" -> Color(0xFF4CAF50)
-        "THROTTLED" -> Color(0xFFF44336)
-        else -> Color(0xFF9E9E9E)
+        "THROTTLED"        -> Color(0xFFF44336)
+        else               -> Color(0xFF9E9E9E)
     }
     Box(
         modifier = GlanceModifier
@@ -207,50 +299,20 @@ private fun StatusChip(status: String) {
     }
 }
 
-@Composable
-private fun WidgetProgressRow(
-    item: WidgetUsageItem,
-    config: WidgetConfig,
-    textColor: Color,
-    subTextColor: Color
-) {
-    val color = parseWidgetColor(config.colorFor(item.dataPointType))
-    val progress = (item.percentage / 100f).coerceIn(0f, 1f)
-    val limitText = item.limit?.let { "${item.used} / $it ${item.volumeUnit}" } ?: "${item.used} ${item.volumeUnit}"
+// ── Utilities ─────────────────────────────────────────────────────────────────
 
-    Column(modifier = GlanceModifier.fillMaxWidth()) {
-        Row(modifier = GlanceModifier.fillMaxWidth()) {
-            Text(
-                text = item.name,
-                style = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.Medium, color = ColorProvider(textColor)),
-                modifier = GlanceModifier.defaultWeight()
-            )
-            Text(limitText, style = TextStyle(fontSize = 9.sp, color = ColorProvider(subTextColor)))
-        }
-        Spacer(GlanceModifier.height(2.dp))
-        LinearProgressIndicator(
-            progress = progress,
-            modifier = GlanceModifier.fillMaxWidth().height(4.dp),
-            color = ColorProvider(color),
-            backgroundColor = ColorProvider(Color(0x1A000000))
-        )
-    }
-}
-
-/** Safely parses a hex colour string to a Compose [Color], defaulting to blue. */
 private fun parseWidgetColor(hex: String): Color = try {
     Color(AColor.parseColor(hex).toLong() and 0xFFFFFFFFL)
 } catch (_: Exception) {
     Color(0xFF2196F3)
 }
 
-/** Compact relative-time string suitable for the small widget footer. */
 private fun widgetRelativeTime(epochMillis: Long): String {
     val diff = System.currentTimeMillis() - epochMillis
     return when {
-        diff < 60_000L -> "just now"
-        diff < 3_600_000L -> "${diff / 60_000}m ago"
-        diff < 86_400_000L -> "${diff / 3_600_000}h ago"
-        else -> "${diff / 86_400_000}d ago"
+        diff < 60_000L       -> "just now"
+        diff < 3_600_000L    -> "${diff / 60_000}m ago"
+        diff < 86_400_000L   -> "${diff / 3_600_000}h ago"
+        else                 -> "${diff / 86_400_000}d ago"
     }
 }

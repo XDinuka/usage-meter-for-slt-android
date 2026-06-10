@@ -6,34 +6,37 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -53,6 +56,7 @@ import com.xdinuka.sltusagemeter.data.auth.ProfileStore
 import com.xdinuka.sltusagemeter.ui.theme.SltTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import kotlin.math.abs
 
 @AndroidEntryPoint
 class SltWidgetConfigActivity : ComponentActivity() {
@@ -67,12 +71,8 @@ class SltWidgetConfigActivity : ComponentActivity() {
         ) ?: AppWidgetManager.INVALID_APPWIDGET_ID
 
         if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) {
-            setResult(RESULT_CANCELED)
-            finish()
-            return
+            setResult(RESULT_CANCELED); finish(); return
         }
-
-        // Default to cancel so back press = no widget placed
         setResult(RESULT_CANCELED)
 
         setContent {
@@ -84,14 +84,10 @@ class SltWidgetConfigActivity : ComponentActivity() {
                     onSave = { config ->
                         WidgetConfigStore(this).saveConfig(config)
                         SltWidgetReceiver.enqueueOneTimeWork(this)
-                        val result = Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-                        setResult(RESULT_OK, result)
+                        setResult(RESULT_OK, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId))
                         finish()
                     },
-                    onCancel = {
-                        setResult(RESULT_CANCELED)
-                        finish()
-                    }
+                    onCancel = { setResult(RESULT_CANCELED); finish() }
                 )
             }
         }
@@ -108,24 +104,21 @@ private fun WidgetConfigScreen(
     onCancel: () -> Unit
 ) {
     var selectedProfileId by remember { mutableStateOf(existing.profileId ?: profiles.firstOrNull()?.id) }
-    var selectedPhone by remember { mutableStateOf(existing.telephoneNo) }
-    var themeMode by remember { mutableStateOf(existing.themeMode) }
-    var alpha by remember { mutableFloatStateOf(existing.backgroundAlpha) }
+    var selectedPhone     by remember { mutableStateOf(existing.telephoneNo) }
+    var themeMode         by remember { mutableStateOf(existing.themeMode) }
+    var alpha             by remember { mutableFloatStateOf(existing.backgroundAlpha) }
     var showAccountDetails by remember { mutableStateOf(existing.showAccountDetails) }
-    var showLastFetched by remember { mutableStateOf(existing.showLastFetched) }
-    var enabledPoints by remember { mutableStateOf(existing.enabledDataPoints.toMutableSet()) }
-    // Per-data-point colour map (starts from existing or defaults)
-    var dataPointColors by remember {
-        mutableStateOf(DEFAULT_DATA_POINT_COLORS + existing.dataPointColors)
-    }
+    var showLastFetched   by remember { mutableStateOf(existing.showLastFetched) }
+    var enabledPoints     by remember { mutableStateOf(existing.enabledDataPoints.toMutableSet()) }
+    var dataPointColors   by remember { mutableStateOf(DEFAULT_DATA_POINT_COLORS + existing.dataPointColors) }
 
     val selectedProfile = profiles.find { it.id == selectedProfileId }
     val phones = selectedProfile?.telephoneNumbers ?: emptyList()
 
-    Scaffold(
-        topBar = { TopAppBar(title = { Text("Configure Widget") }) }
-    ) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text("Configure Widget") }) }) { padding ->
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
+
+            // ── Account ───────────────────────────────────────────────────────
             item { SectionHeader("Account") }
             item {
                 if (profiles.isNotEmpty()) {
@@ -133,17 +126,14 @@ private fun WidgetConfigScreen(
                         label = "Account",
                         value = selectedProfile?.username ?: "Select account",
                         options = profiles.map { it.username },
-                        onSelect = { idx ->
-                            selectedProfileId = profiles[idx].id
-                            selectedPhone = null
-                        }
+                        onSelect = { idx -> selectedProfileId = profiles[idx].id; selectedPhone = null }
                     )
                 }
                 if (phones.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
                     DropdownSetting(
                         label = "Phone number",
-                        value = selectedPhone ?: phones.firstOrNull() ?: "—",
+                        value = selectedPhone ?: phones.first(),
                         options = phones,
                         onSelect = { idx -> selectedPhone = phones[idx] }
                     )
@@ -152,53 +142,46 @@ private fun WidgetConfigScreen(
 
             item {
                 Spacer(Modifier.height(8.dp))
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                HorizontalDivider(Modifier.padding(horizontal = 16.dp))
             }
+
+            // ── Appearance ────────────────────────────────────────────────────
             item { SectionHeader("Appearance") }
             item {
                 ThemeSelector(themeMode) { themeMode = it }
-                Spacer(Modifier.height(8.dp))
-                Column(Modifier.padding(horizontal = 16.dp)) {
-                    Text(
-                        "Background opacity: ${(alpha * 100).toInt()}%",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Slider(value = alpha, onValueChange = { alpha = it }, valueRange = 0f..1f, steps = 19)
-                }
+                Spacer(Modifier.height(12.dp))
+                OpacitySelector(
+                    value = alpha,
+                    onChange = { alpha = it },
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+                Spacer(Modifier.height(4.dp))
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        "Show subscriber ID",
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f)
-                    )
+                    Text("Show subscriber ID", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                     Switch(checked = showAccountDetails, onCheckedChange = { showAccountDetails = it })
                 }
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        "Show last updated time",
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f)
-                    )
+                    Text("Show last updated time", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                     Switch(checked = showLastFetched, onCheckedChange = { showLastFetched = it })
                 }
             }
 
             item {
                 Spacer(Modifier.height(8.dp))
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                HorizontalDivider(Modifier.padding(horizontal = 16.dp))
             }
-            item { SectionHeader("Data points") }
 
+            // ── Data points ───────────────────────────────────────────────────
+            item { SectionHeader("Data points") }
             DataPointType.entries.forEach { dp ->
                 item {
                     Column(Modifier.fillMaxWidth()) {
-                        // Enable/disable row
                         Row(
                             Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -213,36 +196,34 @@ private fun WidgetConfigScreen(
                             )
                             Text(dp.label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                         }
-                        // Colour picker row (always shown so user can pre-configure colours)
-                        ColorPaletteRow(
+                        ColorPicker(
                             selected = dataPointColors[dp.name] ?: DEFAULT_DATA_POINT_COLORS[dp.name] ?: "#2196F3",
                             onSelect = { hex ->
                                 dataPointColors = dataPointColors.toMutableMap().apply { put(dp.name, hex) }
                             },
-                            modifier = Modifier.padding(start = 52.dp, end = 16.dp, bottom = 8.dp)
+                            modifier = Modifier.padding(start = 52.dp, end = 16.dp, bottom = 10.dp)
                         )
                     }
                 }
             }
 
+            // ── Buttons ───────────────────────────────────────────────────────
             item {
                 Spacer(Modifier.height(16.dp))
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                     Button(
                         onClick = {
-                            onSave(
-                                WidgetConfig(
-                                    widgetId = widgetId,
-                                    profileId = selectedProfileId,
-                                    telephoneNo = selectedPhone ?: phones.firstOrNull(),
-                                    themeMode = themeMode,
-                                    backgroundAlpha = alpha,
-                                    showAccountDetails = showAccountDetails,
-                                    enabledDataPoints = enabledPoints.toList(),
-                                    dataPointColors = dataPointColors,
-                                    showLastFetched = showLastFetched
-                                )
-                            )
+                            onSave(WidgetConfig(
+                                widgetId = widgetId,
+                                profileId = selectedProfileId,
+                                telephoneNo = selectedPhone ?: phones.firstOrNull(),
+                                themeMode = themeMode,
+                                backgroundAlpha = alpha,
+                                showAccountDetails = showAccountDetails,
+                                enabledDataPoints = enabledPoints.toList(),
+                                dataPointColors = dataPointColors,
+                                showLastFetched = showLastFetched
+                            ))
                         },
                         modifier = Modifier.weight(1f)
                     ) { Text("Save") }
@@ -258,49 +239,87 @@ private fun WidgetConfigScreen(
     }
 }
 
-// ── Shared colour picker ─────────────────────────────────────────────────────
+// ── Color picker ──────────────────────────────────────────────────────────────
 
 /**
- * A horizontal row of coloured circles drawn from [WIDGET_COLOR_PALETTE].
- * The currently-selected swatch gets a white ring highlight.
+ * 2-row grid of rounded-square swatches. Selected swatch shows a white check mark.
  */
 @Composable
-internal fun ColorPaletteRow(
+internal fun ColorPicker(
     selected: String,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        WIDGET_COLOR_PALETTE.forEach { hex ->
-            val parsed = parseHexColor(hex)
-            val isSelected = hex.equals(selected, ignoreCase = true)
-            Box(
-                modifier = Modifier
-                    .size(26.dp)
-                    .clip(CircleShape)
-                    .background(parsed)
-                    .then(
-                        if (isSelected) Modifier.border(2.dp, Color.White, CircleShape)
-                        else Modifier
-                    )
-                    .clickable { onSelect(hex) }
-            )
+    val rows = WIDGET_COLOR_PALETTE.chunked(6)
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        rows.forEach { rowColors ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                rowColors.forEach { hex ->
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .aspectRatio(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(parseHexColor(hex))
+                            .clickable { onSelect(hex) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (hex.equals(selected, ignoreCase = true)) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Selected",
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
-/** Parses a hex string safely, falling back to a neutral grey. */
-internal fun parseHexColor(hex: String): Color = try {
-    val argb = android.graphics.Color.parseColor(hex)
-    Color(argb.toLong() and 0xFFFFFFFFL)
-} catch (_: Exception) {
-    Color(0xFF9E9E9E)
+// ── Opacity selector ──────────────────────────────────────────────────────────
+
+/**
+ * Five preset opacity chips replacing the old continuous slider.
+ */
+@Composable
+internal fun OpacitySelector(
+    value: Float,
+    onChange: (Float) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val presets = listOf(0.25f, 0.5f, 0.75f, 0.9f, 1f)
+    val labels  = listOf("25%", "50%", "75%", "90%", "100%")
+    Column(modifier = modifier) {
+        Text("Background opacity", style = MaterialTheme.typography.bodyMedium)
+        Spacer(Modifier.height(6.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            presets.forEachIndexed { i, preset ->
+                FilterChip(
+                    selected = abs(value - preset) < 0.05f,
+                    onClick  = { onChange(preset) },
+                    label    = { Text(labels[i], style = MaterialTheme.typography.labelSmall) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
 }
 
-// ── Reusable config UI helpers ────────────────────────────────────────────────
+// ── Shared helpers (used by MetricWidgetConfigActivity) ───────────────────────
+
+/** Safely parses a hex colour string; falls back to neutral grey on error. */
+internal fun parseHexColor(hex: String): Color = try {
+    Color(android.graphics.Color.parseColor(hex).toLong() and 0xFFFFFFFFL)
+} catch (_: Exception) { Color(0xFF9E9E9E) }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -312,11 +331,7 @@ internal fun DropdownSetting(
 ) {
     var expanded by remember { mutableStateOf(false) }
     Column(Modifier.padding(horizontal = 16.dp)) {
-        Text(
-            label,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
             OutlinedTextField(
                 value = value,
@@ -327,10 +342,7 @@ internal fun DropdownSetting(
             )
             ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 options.forEachIndexed { idx, opt ->
-                    DropdownMenuItem(
-                        text = { Text(opt) },
-                        onClick = { onSelect(idx); expanded = false }
-                    )
+                    DropdownMenuItem(text = { Text(opt) }, onClick = { onSelect(idx); expanded = false })
                 }
             }
         }
@@ -348,8 +360,8 @@ internal fun ThemeSelector(current: String, onChange: (String) -> Unit) {
             modes.forEachIndexed { idx, mode ->
                 SegmentedButton(
                     selected = current == mode.name,
-                    onClick = { onChange(mode.name) },
-                    shape = SegmentedButtonDefaults.itemShape(idx, modes.size)
+                    onClick  = { onChange(mode.name) },
+                    shape    = SegmentedButtonDefaults.itemShape(idx, modes.size)
                 ) { Text(mode.name.lowercase().replaceFirstChar { it.uppercase() }) }
             }
         }

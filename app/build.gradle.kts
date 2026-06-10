@@ -92,8 +92,11 @@ dependencies {
     implementation(libs.moshi)
     ksp(libs.moshi.codegen)
 
-    // Security
-    implementation(libs.security.crypto)
+    // Secure storage — DataStore + Tink
+    // TODO: Migrate to androidx.security:security-datastore once it reaches stable.
+    //       https://developer.android.com/jetpack/androidx/releases/security
+    implementation(libs.tink.android)
+    implementation(libs.datastore.preferences)
 
     // WorkManager
     implementation(libs.work.runtime)

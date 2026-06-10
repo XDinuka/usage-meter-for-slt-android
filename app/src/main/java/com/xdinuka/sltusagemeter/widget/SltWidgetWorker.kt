@@ -141,64 +141,6 @@ class SltWidgetWorker @AssistedInject constructor(
         return profileStore.getProfile(profileId)
     }
 
-    private fun buildWidgetItems(
-        summary: UsageSummaryBundle,
-        vas: List<UsageDetail>
-    ): List<WidgetUsageItem> = buildList {
-        summary.myPackageInfo?.usageDetails?.forEach { detail ->
-            add(WidgetUsageItem(
-                name = detail.name,
-                used = detail.used ?: "0",
-                limit = detail.limit,
-                remaining = detail.remaining,
-                percentage = detail.percentage,
-                volumeUnit = detail.volumeUnit ?: "GB",
-                colorType = "blue",
-                dataPointType = DataPointType.MAIN.name
-            ))
-        }
-        summary.bonusDataSummary?.let { bonus ->
-            val usedVal = (bonus.used ?: "0").toFloatOrNull() ?: 0f
-            val limitVal = (bonus.limit ?: "0").toFloatOrNull() ?: 1f
-            add(WidgetUsageItem(
-                name = "Bonus Data",
-                used = bonus.used ?: "0",
-                limit = bonus.limit,
-                remaining = "%.2f".format((limitVal - usedVal).coerceAtLeast(0f)),
-                percentage = if (limitVal > 0) ((usedVal / limitVal) * 100).toInt() else 0,
-                volumeUnit = bonus.volumeUnit ?: "GB",
-                colorType = "purple",
-                dataPointType = DataPointType.BONUS.name
-            ))
-        }
-        summary.extraGbDataSummary?.let { extra ->
-            val usedVal = (extra.used ?: "0").toFloatOrNull() ?: 0f
-            val limitVal = (extra.limit ?: "0").toFloatOrNull() ?: 1f
-            add(WidgetUsageItem(
-                name = "Extra GB",
-                used = extra.used ?: "0",
-                limit = extra.limit,
-                remaining = "%.2f".format((limitVal - usedVal).coerceAtLeast(0f)),
-                percentage = if (limitVal > 0) ((usedVal / limitVal) * 100).toInt() else 0,
-                volumeUnit = extra.volumeUnit ?: "GB",
-                colorType = "orange",
-                dataPointType = DataPointType.EXTRA_GB.name
-            ))
-        }
-        vas.forEach { v ->
-            add(WidgetUsageItem(
-                name = v.name,
-                used = v.used ?: "0",
-                limit = v.limit,
-                remaining = v.remaining,
-                percentage = v.percentage,
-                volumeUnit = v.volumeUnit ?: "GB",
-                colorType = "green",
-                dataPointType = DataPointType.VAS.name
-            ))
-        }
-    }
-
     private fun resolveMetricItem(
         items: List<WidgetUsageItem>,
         dataPoint: String

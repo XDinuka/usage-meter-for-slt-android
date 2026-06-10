@@ -1,44 +1,53 @@
 package com.xdinuka.sltusagemeter.data.auth
 
-import android.content.Context
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
-import dagger.hilt.android.qualifiers.ApplicationContext
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.stringPreferencesKey
+import com.google.crypto.tink.Aead
+import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
+import javax.inject.Named
 import javax.inject.Singleton
 
 @Singleton
-class TokenStore @Inject constructor(@ApplicationContext context: Context) {
+class TokenStore @Inject constructor(
+    @Named("tokenDataStore") dataStore: DataStore<Preferences>,
+    aead: Aead,
+) {
+    private val store = EncryptedDataStore(dataStore, aead)
 
-    private val prefs = EncryptedSharedPreferences.create(
-        context,
-        "slt_secure_prefs",
-        MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build(),
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-    )
+    // runBlocking is intentional: TokenAuthenticator runs on an OkHttp background thread
+    // and already uses runBlocking to synchronise token refresh. Reading/writing a single
+    // short string from DataStore is fast enough that blocking there is not a concern.
 
     var accessToken: String?
-        get() = prefs.getString(KEY_ACCESS_TOKEN, null)
-        set(value) = prefs.edit().putString(KEY_ACCESS_TOKEN, value).apply()
+        get() = runBlocking { store.getString(KEY_ACCESS_TOKEN) }
+        set(value) = runBlocking {
+            if (value != null) store.putString(KEY_ACCESS_TOKEN, value)
+            else store.remove(KEY_ACCESS_TOKEN)
+        }
 
     var refreshToken: String?
-        get() = prefs.getString(KEY_REFRESH_TOKEN, null)
-        set(value) = prefs.edit().putString(KEY_REFRESH_TOKEN, value).apply()
+        get() = runBlocking { store.getString(KEY_REFRESH_TOKEN) }
+        set(value) = runBlocking {
+            if (value != null) store.putString(KEY_REFRESH_TOKEN, value)
+            else store.remove(KEY_REFRESH_TOKEN)
+        }
 
     var username: String?
-        get() = prefs.getString(KEY_USERNAME, null)
-        set(value) = prefs.edit().putString(KEY_USERNAME, value).apply()
+        get() = runBlocking { store.getString(KEY_USERNAME) }
+        set(value) = runBlocking {
+            if (value != null) store.putString(KEY_USERNAME, value)
+            else store.remove(KEY_USERNAME)
+        }
 
     fun isLoggedIn(): Boolean = accessToken != null
 
-    fun clearAll() = prefs.edit().clear().apply()
+    fun clearAll() = runBlocking { store.clear() }
 
     companion object {
-        private const val KEY_ACCESS_TOKEN = "accessToken"
-        private const val KEY_REFRESH_TOKEN = "refreshToken"
-        private const val KEY_USERNAME = "username"
+        private val KEY_ACCESS_TOKEN  = stringPreferencesKey("accessToken")
+        private val KEY_REFRESH_TOKEN = stringPreferencesKey("refreshToken")
+        private val KEY_USERNAME      = stringPreferencesKey("username")
     }
 }
